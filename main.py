@@ -1,5 +1,7 @@
 import os
+import base64
 import json
+import mimetypes
 import time
 import hashlib
 import subprocess
@@ -19,8 +21,8 @@ ROOT = Path(__file__).resolve().parent
 STATE_PATH = ROOT / "state" / "processed.json"
 DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
-MAX_UPLOADS = int(os.getenv("MAX_UPLOADS_PER_DAY", "5"))
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+MAX_UPLOADS = int(os.getenv("MAX_UPLOADS_PER_DAY", "5") or "5")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash") or "gemini-3.8-flash"
 VIDEO_MIME_FALLBACK = "application/octet-stream"
 ALLOWED_VIDEO_MIMES = {"video/mp4", "video/quicktime", "video/webm", "video/x-matroska",
                        "video/x-msvideo", "video/mpeg", "video/3gpp"}
@@ -59,7 +61,13 @@ def google_credentials():
         client_secret=client_secret,
         scopes=DRIVE_SCOPES + YOUTUBE_SCOPES,
     )
-    creds.refresh(Request())
+    try:
+        creds.refresh(Request())
+    except Exception as e:
+        raise RuntimeError(
+            "Google OAuth refresh failed. Verify GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN "
+            f"and that the refresh token was granted scopes {DRIVE_SCOPES + YOUTUBE_SCOPES}: {e}"
+        ) from e
     return creds
 
 def list_drive_videos(drive, folder_id):
@@ -105,53 +113,121 @@ def sha256_file(path):
             h.update(chunk)
     return h.hexdigest()
 
+def md5_file(path):
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8 * 1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def extract_frames(video_path, out_dir, max_frames=6):
     # Frame extraction is only for analysis/thumbnail generation. The source file is never written to.
     out_dir.mkdir(parents=True, exist_ok=True)
-    probe = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
-        capture_output=True, text=True, timeout=30
-    )
     try:
-        duration = max(0.1, float(probe.stdout.strip()))
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
+            capture_output=True, text=True, timeout=30
+        )
+    except FileNotFoundError:
+        raise RuntimeError("ffprobe not found. Ensure FFmpeg is installed (sudo apt-get install -y ffmpeg).")
+    except subprocess.TimeoutExpired:
+        probe = None
+    try:
+        duration = max(0.1, float(probe.stdout.strip())) if probe and probe.stdout.strip() else 10.0
     except Exception:
         duration = 10.0
     times = sorted(set(min(max(0.2, duration * p), max(0.2, duration - 0.2)) for p in [0.12, 0.28, 0.44, 0.60, 0.76, 0.90]))[:max_frames]
     frames = []
     for i, sec in enumerate(times):
         target = out_dir / f"frame_{i}.jpg"
-        subprocess.run(
-            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-ss", str(sec), "-i", str(video_path),
-             "-frames:v", "1", "-vf", "scale='min(768,iw)':-2", "-q:v", "3", "-y", str(target)],
-            capture_output=True, timeout=45
-        )
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-ss", str(sec), "-i", str(video_path),
+                 "-frames:v", "1", "-vf", "scale='min(768,iw)':-2", "-q:v", "3", "-y", str(target)],
+                capture_output=True, timeout=60
+            )
+        except FileNotFoundError:
+            raise RuntimeError("ffmpeg not found. Ensure FFmpeg is installed (sudo apt-get install -y ffmpeg).")
+        except subprocess.TimeoutExpired:
+            print(f"Warning: ffmpeg timed out extracting frame at {sec}s; skipping.")
+            continue
+        if result.returncode != 0:
+            print(f"Warning: ffmpeg failed for frame at {sec}s: {(result.stderr or b'')[:500]!r}")
+            continue
         if target.exists() and target.stat().st_size:
             frames.append(target)
+    if not frames:
+        print("Warning: no frames extracted; Gemini will use filename only.")
     return frames
+
+def _strip_json_fences(text):
+    text = text.strip()
+    if text.startswith("```"):
+        # Remove markdown fences like ```json ... ```
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    return text
 
 def call_gemini(prompt, frame_paths):
     api_key = required_env("GEMINI_API_KEY")
     # Gemini REST generateContent with sampled frames as inline JPEGs.
+    # NOTE: REST field names are camelCase (inlineData/mimeType). snake_case
+    # names are rejected with 400 "Unknown name" errors.
     parts = [{"text": prompt}]
     for p in frame_paths[:6]:
-        import base64
-        parts.append({"inline_data": {"mime_type": "image/jpeg",
-                                     "data": base64.b64encode(p.read_bytes()).decode("ascii")}})
+        parts.append({"inlineData": {"mimeType": "image/jpeg",
+                                     "data": base64.b64encode(Path(p).read_bytes()).decode("ascii")}})
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
     payload = {
         "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {"responseMimeType": "application/json", "temperature": 0.6}
     }
+    last_error = None
     for attempt in range(4):
-        r = requests.post(url, json=payload, timeout=90)
-        if r.status_code in (429, 500, 502, 503, 504):
+        try:
+            r = requests.post(url, json=payload, timeout=90)
+        except requests.RequestException as e:
+            last_error = e
+            print(f"Gemini request failed (attempt {attempt + 1}/4): {e}")
             time.sleep(2 ** attempt)
             continue
-        r.raise_for_status()
-        data = r.json()
-        text = data["candidates"][0]["content"]["parts"][0]["text"]
-        return json.loads(text)
-    raise RuntimeError("Gemini API kept returning a retryable error after 4 attempts.")
+        if r.status_code in (429, 500, 502, 503, 504):
+            last_error = RuntimeError(f"Gemini HTTP {r.status_code}: {r.text[:500]}")
+            print(f"Gemini retryable HTTP {r.status_code} (attempt {attempt + 1}/4).")
+            time.sleep(2 ** attempt)
+            continue
+        if r.status_code == 404:
+            raise RuntimeError(
+                f"Gemini model '{GEMINI_MODEL}' not found (HTTP 404: {r.text[:500]}). "
+                "Set a valid GEMINI_MODEL env var, e.g. gemini-2.5-flash or gemini-3.8-flash."
+            )
+        try:
+            r.raise_for_status()
+        except requests.HTTPError as e:
+            # Include response body so Actions logs show the real cause (bad key, bad payload, quota).
+            raise RuntimeError(f"Gemini API error HTTP {r.status_code}: {r.text[:1000]}") from e
+        try:
+            data = r.json()
+        except Exception as e:
+            raise RuntimeError(f"Gemini returned non-JSON response: {r.text[:1000]}") from e
+        candidates = data.get("candidates") or []
+        if not candidates:
+            # Often a safety block or quota issue; surface full payload for debugging.
+            raise RuntimeError(f"Gemini returned no candidates (blocked? quota?): {json.dumps(data)[:1000]}")
+        try:
+            text = candidates[0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError, TypeError) as e:
+            raise RuntimeError(f"Unexpected Gemini response shape: {json.dumps(data)[:1000]}") from e
+        try:
+            return json.loads(_strip_json_fences(text))
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Gemini did not return valid JSON: {text[:1000]}") from e
+    raise RuntimeError(f"Gemini API kept returning a retryable error after 4 attempts: {last_error}")
 
 def metadata_for_video(name, frame_paths):
     prompt = f"""
@@ -169,25 +245,51 @@ Rules:
 Filename: {name}
 """
     obj = call_gemini(prompt, frame_paths)
+    if not isinstance(obj, dict):
+        raise RuntimeError(f"Gemini returned unexpected JSON (expected object): {str(obj)[:500]}")
     title = str(obj.get("title", Path(name).stem)).strip()[:100]
     description = str(obj.get("description", "")).strip()
     tags = [str(x).strip().lstrip("#")[:100] for x in obj.get("tags", []) if str(x).strip()][:15]
-    hashtags = [str(x).strip().replace(" ", "") for x in obj.get("hashtags", []) if str(x).strip()][:5]
+    hashtags = [h if h.startswith("#") else f"#{h}" for h in
+                (str(x).strip().replace(" ", "") for x in obj.get("hashtags", []) if str(x).strip())][:5]
     if "#Shorts" not in hashtags:
         hashtags.append("#Shorts")
     description = (description + "\n\n" + " ".join(hashtags)).strip()
+    category = str(obj.get("categoryId", "22")).strip() or "22"
+    if not category.isdigit():
+        category = "22"
     return {
         "title": title or Path(name).stem[:100],
         "description": description[:5000],
         "tags": tags,
-        "categoryId": str(obj.get("categoryId", "22")),
+        "categoryId": category,
         "thumbnail_text": str(obj.get("thumbnail_text", "WATCH THIS"))[:45],
     }
+
+def _load_font(size):
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "C:\\Windows\\Fonts\\arialbd.ttf",
+        "C:\\Windows\\Fonts\\arial.ttf",
+    ]
+    for path in candidates:
+        try:
+            if Path(path).exists():
+                return ImageFont.truetype(path, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
 
 def create_thumbnail(frame_paths, text, destination):
     if not frame_paths:
         return None
-    img = Image.open(frame_paths[len(frame_paths)//2]).convert("RGB")
+    try:
+        img = Image.open(frame_paths[len(frame_paths) // 2]).convert("RGB")
+    except Exception as e:
+        print(f"Warning: could not open frame for thumbnail: {e}")
+        return None
     # Make a vertical 9:16 crop for a Shorts-style thumbnail.
     w, h = img.size
     target_ratio = 9 / 16
@@ -199,7 +301,11 @@ def create_thumbnail(frame_paths, text, destination):
         new_h = int(w / target_ratio)
         top = max(0, (h - new_h) // 2)
         img = img.crop((0, top, w, top + new_h))
-    img = img.resize((720, 1280), Image.Resampling.LANCZOS)
+    try:
+        resample = Image.Resampling.LANCZOS
+    except AttributeError:
+        resample = Image.LANCZOS
+    img = img.resize((720, 1280), resample)
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
     from PIL import ImageFilter
     band = Image.new("RGBA", (720, 360), (0, 0, 0, 0))
@@ -209,13 +315,16 @@ def create_thumbnail(frame_paths, text, destination):
     overlay.alpha_composite(band, (0, 800))
     img = Image.alpha_composite(img.convert("RGBA"), overlay)
     draw = ImageDraw.Draw(img)
-    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-    font = ImageFont.truetype(font_path, 54)
-    words = text.upper().split()
+    font = _load_font(54)
+    words = (text or "WATCH THIS").upper().split()
     lines, current = [], ""
     for word in words:
         candidate = (current + " " + word).strip()
-        if draw.textbbox((0,0), candidate, font=font, stroke_width=2)[2] > 650 and current:
+        try:
+            width = draw.textbbox((0, 0), candidate, font=font, stroke_width=2)[2]
+        except Exception:
+            width = len(candidate) * 30
+        if width > 650 and current:
             lines.append(current); current = word
         else:
             current = candidate
@@ -223,15 +332,32 @@ def create_thumbnail(frame_paths, text, destination):
         lines.append(current)
     y = 850
     for line in lines[:3]:
-        bbox = draw.textbbox((0, 0), line, font=font, stroke_width=3)
-        x = max(25, (720 - (bbox[2]-bbox[0])) // 2)
-        draw.text((x, y), line, font=font, fill=(255,255,255,255),
-                  stroke_width=3, stroke_fill=(0,0,0,255))
+        try:
+            bbox = draw.textbbox((0, 0), line, font=font, stroke_width=3)
+            x = max(25, (720 - (bbox[2] - bbox[0])) // 2)
+        except Exception:
+            x = 25
+        draw.text((x, y), line, font=font, fill=(255, 255, 255, 255),
+                  stroke_width=3, stroke_fill=(0, 0, 0, 255))
         y += 70
     img.convert("RGB").save(destination, "JPEG", quality=92, optimize=True)
     return destination
 
-def upload_video(youtube, video_path, meta):
+def _guess_upload_mimetype(video_path, drive_mime=None):
+    if drive_mime and drive_mime.startswith("video/"):
+        return drive_mime
+    guessed, _ = mimetypes.guess_type(str(video_path))
+    if guessed and guessed.startswith("video/"):
+        return guessed
+    suffix = Path(video_path).suffix.lower()
+    mapping = {
+        ".mp4": "video/mp4", ".m4v": "video/mp4", ".mov": "video/quicktime",
+        ".webm": "video/webm", ".mkv": "video/x-matroska", ".avi": "video/x-msvideo",
+        ".mpeg": "video/mpeg", ".mpg": "video/mpeg", ".3gp": "video/3gpp",
+    }
+    return mapping.get(suffix, VIDEO_MIME_FALLBACK)
+
+def upload_video(youtube, video_path, meta, drive_mime=None):
     body = {
         "snippet": {
             "title": meta["title"],
@@ -241,7 +367,8 @@ def upload_video(youtube, video_path, meta):
         },
         "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False},
     }
-    media = MediaFileUpload(str(video_path), mimetype="application/octet-stream",
+    media = MediaFileUpload(str(video_path),
+                            mimetype=_guess_upload_mimetype(video_path, drive_mime),
                             chunksize=8 * 1024 * 1024, resumable=True)
     request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
     response = None
@@ -252,11 +379,19 @@ def upload_video(youtube, video_path, meta):
             if status:
                 print(f"Upload progress: {int(status.progress() * 100)}%")
         except HttpError as e:
-            if e.resp.status in (429, 500, 502, 503, 504) and retry < 5:
+            status_code = getattr(e.resp, "status", None)
+            if status_code in (429, 500, 502, 503, 504) and retry < 5:
                 time.sleep(2 ** retry)
                 retry += 1
                 continue
-            raise
+            # Surface YouTube error body in Actions logs (quota, auth, invalid metadata).
+            try:
+                content = e.content.decode("utf-8", "replace")[:1000] if getattr(e, "content", None) else ""
+            except Exception:
+                content = ""
+            raise RuntimeError(f"YouTube upload failed HTTP {status_code}: {content}") from e
+    if not response or "id" not in response:
+        raise RuntimeError(f"YouTube upload returned unexpected response: {str(response)[:500]}")
     return response["id"]
 
 def try_set_thumbnail(youtube, video_id, thumbnail_path):
@@ -273,7 +408,9 @@ def try_set_thumbnail(youtube, video_id, thumbnail_path):
         return "failed-or-unsupported"
 
 def main():
-    folder_id = required_env("DRIVE_FOLDER_ID")
+    folder_id = required_env("DRIVE_FOLDER_ID").strip()
+    if not folder_id or any(c in folder_id for c in ("'", '"', " ", "/")):
+        raise RuntimeError("DRIVE_FOLDER_ID looks invalid; expected the ID from the Drive folder URL (/folders/ID).")
     state = load_state()
     today = datetime.now(timezone.utc).date().isoformat()
     state.setdefault("daily_uploads", {})
@@ -325,19 +462,29 @@ def main():
                 continue
 
             # Verify downloaded file still matches Drive's checksum when available.
+            # Google Drive only provides md5 for non-Google-Docs binaries; skip otherwise.
             drive_md5 = f.get("md5Checksum")
             if drive_md5:
-                md5 = hashlib.md5(video_path.read_bytes()).hexdigest()
+                md5 = md5_file(video_path)
                 if md5.lower() != drive_md5.lower():
                     raise RuntimeError(f"Drive checksum mismatch for {name}; refusing upload.")
             sha_before_upload = sha256_file(video_path)
-            video_id = upload_video(youtube, video_path, meta)
+            video_id = upload_video(youtube, video_path, meta, f.get("mimeType"))
             sha_after_upload = sha256_file(video_path)
             if sha_before_upload != sha_after_upload:
                 raise RuntimeError("Source file changed during upload; check workflow environment.")
+            # Thumbnail must never block state saving: a video uploaded without a
+            # thumbnail must still be recorded, otherwise the next run re-uploads it.
             thumb_path = tmpdir / ("thumbnail_" + fid[:12] + ".jpg")
-            create_thumbnail(frames, meta["thumbnail_text"], thumb_path)
-            thumb_status = try_set_thumbnail(youtube, video_id, thumb_path)
+            try:
+                create_thumbnail(frames, meta["thumbnail_text"], thumb_path)
+            except Exception as e:
+                print(f"Warning: thumbnail creation failed for {name}: {e}")
+            try:
+                thumb_status = try_set_thumbnail(youtube, video_id, thumb_path)
+            except Exception as e:
+                print(f"Warning: thumbnail step crashed for {name}: {e}")
+                thumb_status = "failed-or-unsupported"
             state["processed"][fid] = {
                 "name": name, "sha256": sha, "status": "uploaded",
                 "youtube_video_id": video_id,

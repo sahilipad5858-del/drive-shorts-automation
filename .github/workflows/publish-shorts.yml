@@ -21,6 +21,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -33,7 +34,9 @@ jobs:
           sudo apt-get install -y ffmpeg fonts-dejavu-core
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Run automation
         env:
@@ -42,6 +45,8 @@ jobs:
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
           DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+          MAX_UPLOADS_PER_DAY: ${{ vars.MAX_UPLOADS_PER_DAY }}
           PYTHONUNBUFFERED: "1"
         run: python main.py
 
@@ -53,6 +58,7 @@ jobs:
           git add state/processed.json
           if ! git diff --cached --quiet; then
             git commit -m "Update automation state"
+            git pull --rebase origin main || true
             git push origin HEAD:main
           fi
           
