@@ -37,6 +37,9 @@ VIDEO_MIME_FALLBACK = "application/octet-stream"
 ALLOWED_VIDEO_MIMES = {"video/mp4", "video/quicktime", "video/webm", "video/x-matroska",
                        "video/x-msvideo", "video/mpeg", "video/3gpp"}
 
+class UploadLimitReached(RuntimeError):
+    """YouTube channel daily limit or API quota hit — stop run cleanly (exit 0)."""
+
 def required_env(name):
     value = os.getenv(name)
     if not value:
@@ -388,18 +391,36 @@ def upload_video(youtube, video_path, meta, drive_mime=None):
             status, response = request.next_chunk()
             if status:
                 print(f"Upload progress: {int(status.progress() * 100)}%")
-        except HttpError as e:
-            status_code = getattr(e.resp, "status", None)
+        except Exception as e:
+            # googleapiclient raises HttpError or ResumableUploadError (subclass).
+            status_code = getattr(getattr(e, "resp", None), "status", None)
+            try:
+                raw = getattr(e, "content", b"")
+                content = raw.decode("utf-8", "replace")[:2000] if isinstance(raw, (bytes, bytearray)) else str(raw)[:2000]
+            except Exception:
+                content = str(e)[:2000]
+            haystack = f"{content} {e}"
+            limit_hit = (
+                status_code in (400, 403, 429)
+                and any(s in haystack for s in (
+                    "uploadLimitExceeded", "quotaExceeded", "quota exceeded",
+                    "rateLimitExceeded", "uploadRateLimitExceeded",
+                    "dailyLimitExceeded", "exceeded the number of videos",
+                    "Video Uploads per day",
+                ))
+            )
+            if limit_hit:
+                # Channel daily upload limit or Cloud project quota: stop run cleanly,
+                # do not crash with exit 1. Quota resets ~midnight Pacific.
+                raise UploadLimitReached(
+                    f"YouTube limit reached (HTTP {status_code}): {content[:1000]}"
+                ) from e
             if status_code in (429, 500, 502, 503, 504) and retry < 5:
                 time.sleep(2 ** retry)
                 retry += 1
                 continue
-            # Surface YouTube error body in Actions logs (quota, auth, invalid metadata).
-            try:
-                content = e.content.decode("utf-8", "replace")[:1000] if getattr(e, "content", None) else ""
-            except Exception:
-                content = ""
-            raise RuntimeError(f"YouTube upload failed HTTP {status_code}: {content}") from e
+            # Surface YouTube error body in Actions logs (auth, invalid metadata).
+            raise RuntimeError(f"YouTube upload failed HTTP {status_code}: {content[:1000]}") from e
     if not response or "id" not in response:
         raise RuntimeError(f"YouTube upload returned unexpected response: {str(response)[:500]}")
     return response["id"]
@@ -490,7 +511,18 @@ def main():
                 if md5.lower() != drive_md5.lower():
                     raise RuntimeError(f"Drive checksum mismatch for {name}; refusing upload.")
             sha_before_upload = sha256_file(video_path)
-            video_id = upload_video(youtube, video_path, meta, f.get("mimeType"))
+            try:
+                video_id = upload_video(youtube, video_path, meta, f.get("mimeType"))
+            except UploadLimitReached as e:
+                # YouTube channel daily limit or project quota — not a code bug.
+                # Stop cleanly with exit 0 so the run shows green; retry after reset
+                # (~midnight Pacific), after phone-verifying the channel, or with lower caps.
+                print(f"Stopping run: {e}")
+                print("This is a YouTube limit (channel daily upload limit or API quota), "
+                      "not a code bug. Check YouTube Studio uploads, verify channel by phone, "
+                      "and retry after quota reset.")
+                save_state(state)
+                break
             sha_after_upload = sha256_file(video_path)
             if sha_before_upload != sha_after_upload:
                 raise RuntimeError("Source file changed during upload; check workflow environment.")
