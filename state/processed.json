@@ -1,4 +1,17 @@
 {
-  "processed": {},
-  "daily_uploads": {}
+  "processed": {
+    "1-Eymsy7Ixto40TcLJewu33FprH5kRwMb": {
+      "name": "ERideBuy.Com (214).mp4",
+      "sha256": "5cb3a5db604dc272690e1d1eef7ba165c2357b2630874dabb3bbe4340501ed13",
+      "status": "uploaded",
+      "youtube_video_id": "0X8cZk-6n_o",
+      "youtube_url": "https://www.youtube.com/shorts/0X8cZk-6n_o",
+      "thumbnail_status": "set",
+      "uploaded_at_utc": "2026-10-13T21:16:53.425092+00:00",
+      "title": "When the angel eyes wake up in the dark"
+    }
+  },
+  "daily_uploads": {
+    "2026-10-13": 1
+  }
 }
