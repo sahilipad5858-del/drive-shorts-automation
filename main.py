@@ -21,7 +21,17 @@ ROOT = Path(__file__).resolve().parent
 STATE_PATH = ROOT / "state" / "processed.json"
 DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
-MAX_UPLOADS = int(os.getenv("MAX_UPLOADS_PER_DAY", "5") or "5")
+# YouTube Data API default quota is 10,000 units/day.
+# videos.insert costs ~1600 units, thumbnails.set ~50 units.
+# 5 uploads/run ≈ 8250 units, safely under quota. 6+ risks quotaExceeded.
+# Per-run cap protects a single workflow run; per-day cap protects the UTC-day total
+# across the every-4-hours schedule (6 runs/day).
+MAX_UPLOADS_PER_DAY = int(os.getenv("MAX_UPLOADS_PER_DAY", os.getenv("MAX_UPLOADS", "5")) or "5")
+MAX_UPLOADS_PER_RUN = int(os.getenv("MAX_UPLOADS_PER_RUN", "5") or "5")
+MAX_UPLOADS_PER_DAY = max(1, min(MAX_UPLOADS_PER_DAY, 10))
+MAX_UPLOADS_PER_RUN = max(1, min(MAX_UPLOADS_PER_RUN, 10))
+# Back-compat alias for older configs referencing MAX_UPLOADS.
+MAX_UPLOADS = MAX_UPLOADS_PER_DAY
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash") or "gemini-3.8-flash"
 VIDEO_MIME_FALLBACK = "application/octet-stream"
 ALLOWED_VIDEO_MIMES = {"video/mp4", "video/quicktime", "video/webm", "video/x-matroska",
@@ -415,8 +425,14 @@ def main():
     today = datetime.now(timezone.utc).date().isoformat()
     state.setdefault("daily_uploads", {})
     daily_count = int(state["daily_uploads"].get(today, 0))
-    if daily_count >= MAX_UPLOADS:
-        print(f"Daily limit already reached: {daily_count}/{MAX_UPLOADS} UTC.")
+    run_count = 0
+    print(f"Caps: {MAX_UPLOADS_PER_RUN} per run, {MAX_UPLOADS_PER_DAY} per UTC day "
+          f"(daily used: {daily_count}, model: {GEMINI_MODEL}).")
+    if MAX_UPLOADS_PER_DAY > 5 or MAX_UPLOADS_PER_RUN > 5:
+        print("Warning: >5 uploads risks YouTube Data API quotaExceeded "
+              "(default 10k units/day; ~1600 per upload). Lower caps if you see quota errors.")
+    if daily_count >= MAX_UPLOADS_PER_DAY:
+        print(f"Daily limit already reached: {daily_count}/{MAX_UPLOADS_PER_DAY} UTC.")
         return
 
     creds = google_credentials()
@@ -430,8 +446,13 @@ def main():
     with tempfile.TemporaryDirectory(prefix="shorts-") as tmp:
         tmpdir = Path(tmp)
         for f in files:
-            if daily_count >= MAX_UPLOADS:
-                print("Daily upload limit reached; remaining files wait for a later run.")
+            if run_count >= MAX_UPLOADS_PER_RUN:
+                print(f"Per-run upload limit reached ({run_count}/{MAX_UPLOADS_PER_RUN}); "
+                      "remaining files wait for a later run.")
+                break
+            if daily_count >= MAX_UPLOADS_PER_DAY:
+                print(f"Daily upload limit reached ({daily_count}/{MAX_UPLOADS_PER_DAY} UTC); "
+                      "remaining files wait for a later run.")
                 break
             fid = f["id"]
             if fid in state["processed"]:
@@ -494,9 +515,11 @@ def main():
                 "title": meta["title"],
             }
             daily_count += 1
+            run_count += 1
             state["daily_uploads"][today] = daily_count
             save_state(state)
-            print(f"Published: https://www.youtube.com/shorts/{video_id} | daily {daily_count}/{MAX_UPLOADS}")
+            print(f"Published: https://www.youtube.com/shorts/{video_id} | "
+                  f"run {run_count}/{MAX_UPLOADS_PER_RUN}, daily {daily_count}/{MAX_UPLOADS_PER_DAY}")
 
     save_state(state)
 

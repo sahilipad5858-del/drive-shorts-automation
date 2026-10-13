@@ -48,7 +48,7 @@ The value after `/folders/` is the folder ID. Do not make the folder public.
 
 ## Daily cap and duplicates
 
-The workflow processes no more than five successful uploads per UTC date. It records each Drive file ID and SHA-256 hash in `state/processed.json`, and skips an identical file hash even if it has a different Drive ID. Failed metadata requests are retried on later scheduled runs. Upload interruptions use the YouTube API's resumable upload mechanism.
+The workflow uploads at most 5 videos per run and at most 5 per UTC day (both configurable via `MAX_UPLOADS_PER_RUN` / `MAX_UPLOADS_PER_DAY`). This fits the YouTube Data API default quota (10,000 units/day; ~1,600 per `videos.insert` + ~50 per thumbnail ≈ 8,250 for 5 uploads). Keep caps at 5 or lower unless your API quota was increased, otherwise you will see `quotaExceeded`. It records each Drive file ID and SHA-256 hash in `state/processed.json`, and skips an identical file hash even if it has a different Drive ID. Failed metadata requests are retried on later scheduled runs. Upload interruptions use the YouTube API's resumable upload mechanism.
 
 ## Security
 

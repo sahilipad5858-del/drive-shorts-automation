@@ -47,6 +47,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
           MAX_UPLOADS_PER_DAY: ${{ vars.MAX_UPLOADS_PER_DAY }}
+          MAX_UPLOADS_PER_RUN: ${{ vars.MAX_UPLOADS_PER_RUN }}
           PYTHONUNBUFFERED: "1"
         run: python main.py
 
