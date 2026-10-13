@@ -20,7 +20,7 @@ STATE_PATH = ROOT / "state" / "processed.json"
 DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 MAX_UPLOADS = int(os.getenv("MAX_UPLOADS_PER_DAY", "5"))
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 VIDEO_MIME_FALLBACK = "application/octet-stream"
 ALLOWED_VIDEO_MIMES = {"video/mp4", "video/quicktime", "video/webm", "video/x-matroska",
                        "video/x-msvideo", "video/mpeg", "video/3gpp"}
