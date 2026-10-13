@@ -15,7 +15,6 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-from googleapiclient.errors import HttpError
 
 ROOT = Path(__file__).resolve().parent
 STATE_PATH = ROOT / "state" / "processed.json"
@@ -26,12 +25,10 @@ YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 # 5 uploads/run ≈ 8250 units, safely under quota. 6+ risks quotaExceeded.
 # Per-run cap protects a single workflow run; per-day cap protects the UTC-day total
 # across the every-4-hours schedule (6 runs/day).
-MAX_UPLOADS_PER_DAY = int(os.getenv("MAX_UPLOADS_PER_DAY", os.getenv("MAX_UPLOADS", "5")) or "5")
+MAX_UPLOADS_PER_DAY = int(os.getenv("MAX_UPLOADS_PER_DAY", "5") or "5")
 MAX_UPLOADS_PER_RUN = int(os.getenv("MAX_UPLOADS_PER_RUN", "5") or "5")
 MAX_UPLOADS_PER_DAY = max(1, min(MAX_UPLOADS_PER_DAY, 10))
 MAX_UPLOADS_PER_RUN = max(1, min(MAX_UPLOADS_PER_RUN, 10))
-# Back-compat alias for older configs referencing MAX_UPLOADS.
-MAX_UPLOADS = MAX_UPLOADS_PER_DAY
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash") or "gemini-3.8-flash"
 # Shorts eligibility (YouTube Shorts: <= 3 min since Oct 2024). Original file is
 # NEVER re-encoded; longer videos still upload but YouTube treats them as regular videos.
@@ -117,7 +114,6 @@ def download_original(drive, file_id, destination):
     request = drive.files().get_media(fileId=file_id, supportsAllDrives=True)
     # Download in chunks to disk; no transcoding or media conversion.
     from googleapiclient.http import MediaIoBaseDownload
-    import io
     with open(destination, "wb") as fh:
         downloader = MediaIoBaseDownload(fh, request, chunksize=8 * 1024 * 1024)
         done = False
@@ -466,7 +462,7 @@ def upload_video(youtube, video_path, meta, drive_mime=None):
             if status:
                 print(f"Upload progress: {int(status.progress() * 100)}%")
         except Exception as e:
-            # googleapiclient raises HttpError or ResumableUploadError (subclass).
+            # googleapiclient raises HttpError/ResumableUploadError on upload failures.
             status_code = getattr(getattr(e, "resp", None), "status", None)
             try:
                 raw = getattr(e, "content", b"")
