@@ -33,6 +33,12 @@ MAX_UPLOADS_PER_RUN = max(1, min(MAX_UPLOADS_PER_RUN, 10))
 # Back-compat alias for older configs referencing MAX_UPLOADS.
 MAX_UPLOADS = MAX_UPLOADS_PER_DAY
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash") or "gemini-3.8-flash"
+# Shorts eligibility (YouTube Shorts: <= 3 min since Oct 2024). Original file is
+# NEVER re-encoded; longer videos still upload but YouTube treats them as regular videos.
+SHORTS_MAX_SECONDS = float(os.getenv("SHORTS_MAX_SECONDS", "180") or "180")
+STRICT_SHORTS_ONLY = (os.getenv("STRICT_SHORTS_ONLY", "false") or "false").strip().lower() in ("1", "true", "yes")
+# YouTube custom thumbnails: 1280x720 recommended, JPG/PNG, must be < 2MB for safety.
+THUMBNAIL_MAX_BYTES = int(os.getenv("THUMBNAIL_MAX_BYTES", "1900000") or "1900000")
 VIDEO_MIME_FALLBACK = "application/octet-stream"
 ALLOWED_VIDEO_MIMES = {"video/mp4", "video/quicktime", "video/webm", "video/x-matroska",
                        "video/x-msvideo", "video/mpeg", "video/3gpp"}
@@ -134,8 +140,37 @@ def md5_file(path):
     return h.hexdigest()
 
 
-def extract_frames(video_path, out_dir, max_frames=6):
-    # Frame extraction is only for analysis/thumbnail generation. The source file is never written to.
+def probe_video(video_path):
+    """Read-only media inspection (never modifies the file). Returns dict."""
+    info = {"duration": None, "width": None, "height": None, "codec": None,
+            "size_bytes": Path(video_path).stat().st_size}
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=width,height,codec_name,duration",
+             "-show_entries", "format=duration",
+             "-of", "json", str(video_path)],
+            capture_output=True, text=True, timeout=30)
+        if r.returncode == 0 and r.stdout.strip():
+            data = json.loads(r.stdout)
+            streams = data.get("streams") or [{}]
+            s = streams[0]
+            info["width"] = s.get("width")
+            info["height"] = s.get("height")
+            info["codec"] = s.get("codec_name")
+            dur = s.get("duration") or (data.get("format") or {}).get("duration")
+            try:
+                info["duration"] = float(dur) if dur is not None else None
+            except Exception:
+                pass
+    except FileNotFoundError:
+        raise RuntimeError("ffprobe not found. Ensure FFmpeg is installed (sudo apt-get install -y ffmpeg).")
+    except Exception as e:
+        print(f"Warning: ffprobe inspection failed: {e}")
+    return info
+
+
+def extract_frames(video_path, out_dir, max_frames=6):    # Frame extraction is only for analysis/thumbnail generation. The source file is never written to.
     out_dir.mkdir(parents=True, exist_ok=True)
     try:
         probe = subprocess.run(
@@ -242,20 +277,25 @@ def call_gemini(prompt, frame_paths):
             raise RuntimeError(f"Gemini did not return valid JSON: {text[:1000]}") from e
     raise RuntimeError(f"Gemini API kept returning a retryable error after 4 attempts: {last_error}")
 
-def metadata_for_video(name, frame_paths):
+def metadata_for_video(name, frame_paths, probe=None):
+    probe_note = ""
+    if probe:
+        probe_note = (f"\nVideo facts: duration={probe.get('duration')}s, "
+                      f"resolution={probe.get('width')}x{probe.get('height')}, codec={probe.get('codec')}.")
     prompt = f"""
-You are a careful YouTube Shorts metadata editor. Inspect the supplied sampled video frames and filename.
+You are an expert YouTube Shorts strategist + metadata editor. Inspect the sampled frames and filename.
 Return ONLY valid JSON with keys: title, description, tags, hashtags, thumbnail_text, categoryId.
-Rules:
-- Be accurate; do not claim events or facts not visible or inferable.
-- Title should be engaging, specific, natural, and ideally under 70 characters. No fake claims.
-- Description: 1-3 useful sentences and a gentle call to action; do not invent links.
-- tags: array of up to 12 relevant search phrases, no # symbols.
-- hashtags: array of 3-5 relevant hashtags including Shorts when suitable; include #Shorts.
-- thumbnail_text: 2-5 short words, suitable for a high-contrast thumbnail overlay.
-- categoryId: use "22" unless another category clearly fits.
-- This is intended as a YouTube Short. Do not suggest changing or re-encoding the source.
-Filename: {name}
+Rules (virality + accuracy):
+- Be 100% accurate; never invent events, people, places, or claims not visible/inferable.
+- Title: hook-first, specific, natural, <=70 chars ideal (hard max 100). No ALL-CAPS, no clickbait lies.
+- Description: first 1-2 lines must hook + summarize (visible above the fold); then 1 useful sentence;
+  then soft CTA (e.g. follow for more). No invented links. Hashtags go at the very end.
+- tags: up to 12 specific search phrases (2-4 words each), no # symbols, include 2-3 long-tail variants.
+- hashtags: 3-5 total, lowercase-friendly except proper nouns; always end with #Shorts.
+- thumbnail_text: 2-4 BIG emotion/curiosity words (e.g. MUST SEE, SO CLOSE), no small words.
+- categoryId: "22" (People & Blogs) unless clearly music/gaming/etc.
+- Audience: global Shorts feed, any device. Keep language simple and universal.
+Filename: {name}{probe_note}
 """
     obj = call_gemini(prompt, frame_paths)
     if not isinstance(obj, dict):
@@ -296,65 +336,99 @@ def _load_font(size):
 
 
 def create_thumbnail(frame_paths, text, destination):
+    """Build a YouTube-spec thumbnail (1280x720 JPG <2MB) WITHOUT touching the video.
+
+    Uses the middle sampled frame: blurred 16:9 background + centered 9:16 crop
+    + high-contrast text band. Returns path or None. Never raises.
+    """
     if not frame_paths:
         return None
     try:
-        img = Image.open(frame_paths[len(frame_paths) // 2]).convert("RGB")
+        from PIL import ImageFilter, ImageOps
+        src = Image.open(frame_paths[len(frame_paths) // 2])
+        try:
+            src = ImageOps.exif_transpose(src)
+        except Exception:
+            pass
+        src = src.convert("RGB")
     except Exception as e:
         print(f"Warning: could not open frame for thumbnail: {e}")
         return None
-    # Make a vertical 9:16 crop for a Shorts-style thumbnail.
-    w, h = img.size
-    target_ratio = 9 / 16
-    if w / h > target_ratio:
-        new_w = int(h * target_ratio)
-        left = max(0, (w - new_w) // 2)
-        img = img.crop((left, 0, left + new_w, h))
-    else:
-        new_h = int(w / target_ratio)
-        top = max(0, (h - new_h) // 2)
-        img = img.crop((0, top, w, top + new_h))
     try:
-        resample = Image.Resampling.LANCZOS
-    except AttributeError:
-        resample = Image.LANCZOS
-    img = img.resize((720, 1280), resample)
-    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    from PIL import ImageFilter
-    band = Image.new("RGBA", (720, 360), (0, 0, 0, 0))
-    d = ImageDraw.Draw(band)
-    d.rectangle((0, 0, 720, 360), fill=(0, 0, 0, 145))
-    band = band.filter(ImageFilter.GaussianBlur(2))
-    overlay.alpha_composite(band, (0, 800))
-    img = Image.alpha_composite(img.convert("RGBA"), overlay)
-    draw = ImageDraw.Draw(img)
-    font = _load_font(54)
-    words = (text or "WATCH THIS").upper().split()
-    lines, current = [], ""
-    for word in words:
-        candidate = (current + " " + word).strip()
-        try:
-            width = draw.textbbox((0, 0), candidate, font=font, stroke_width=2)[2]
-        except Exception:
-            width = len(candidate) * 30
-        if width > 650 and current:
-            lines.append(current); current = word
+        # 9:16 vertical crop from source for the Shorts look.
+        w, h = src.size
+        target_ratio = 9 / 16
+        if w / h > target_ratio:
+            new_w = int(h * target_ratio)
+            left = max(0, (w - new_w) // 2)
+            crop = src.crop((left, 0, left + new_w, h))
         else:
-            current = candidate
-    if current:
-        lines.append(current)
-    y = 850
-    for line in lines[:3]:
+            new_h = int(w / target_ratio)
+            top = max(0, (h - new_h) // 2)
+            crop = src.crop((0, top, w, top + new_h))
         try:
-            bbox = draw.textbbox((0, 0), line, font=font, stroke_width=3)
-            x = max(25, (720 - (bbox[2] - bbox[0])) // 2)
-        except Exception:
-            x = 25
-        draw.text((x, y), line, font=font, fill=(255, 255, 255, 255),
-                  stroke_width=3, stroke_fill=(0, 0, 0, 255))
-        y += 70
-    img.convert("RGB").save(destination, "JPEG", quality=92, optimize=True)
-    return destination
+            resample = Image.Resampling.LANCZOS
+        except AttributeError:
+            resample = Image.LANCZOS
+        # Canvas: YouTube-spec 1280x720. Background = blurred fill, center = sharp vertical.
+        canvas = Image.new("RGB", (1280, 720), (0, 0, 0))
+        bg = crop.resize((1280, 720), resample).filter(ImageFilter.GaussianBlur(25))
+        # Darken background slightly for text contrast.
+        bg = Image.blend(bg, Image.new("RGB", bg.size, (0, 0, 0)), 0.35)
+        canvas.paste(bg, (0, 0))
+        fg_h, fg_w = 720, 405  # 9:16 panel centered
+        fg = crop.resize((fg_w, fg_h), resample)
+        canvas.paste(fg, ((1280 - fg_w) // 2, 0))
+        # Bottom text band with contrast.
+        overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+        band = Image.new("RGBA", (1280, 200), (0, 0, 0, 0))
+        d = ImageDraw.Draw(band)
+        d.rectangle((0, 0, 1280, 200), fill=(0, 0, 0, 150))
+        band = band.filter(ImageFilter.GaussianBlur(3))
+        overlay.alpha_composite(band, (0, 520))
+        canvas = Image.alpha_composite(canvas.convert("RGBA"), overlay)
+        draw = ImageDraw.Draw(canvas)
+        font = _load_font(64)
+        words = (text or "WATCH THIS").upper().split()
+        lines, current = [], ""
+        for word in words:
+            candidate = (current + " " + word).strip()
+            try:
+                width = draw.textbbox((0, 0), candidate, font=font, stroke_width=2)[2]
+            except Exception:
+                width = len(candidate) * 34
+            if width > 1150 and current:
+                lines.append(current)
+                current = word
+            else:
+                current = candidate
+        if current:
+            lines.append(current)
+        y = 555
+        for line in lines[:2]:
+            try:
+                bbox = draw.textbbox((0, 0), line, font=font, stroke_width=3)
+                x = max(30, (1280 - (bbox[2] - bbox[0])) // 2)
+            except Exception:
+                x = 30
+            draw.text((x, y), line, font=font, fill=(255, 255, 255, 255),
+                      stroke_width=3, stroke_fill=(0, 0, 0, 255))
+            y += 78
+        # Save under YouTube's limit (<2MB): step quality down until it fits.
+        destination = Path(destination)
+        for quality in (92, 85, 78, 70, 60):
+            canvas.convert("RGB").save(destination, "JPEG", quality=quality, optimize=True)
+            if destination.stat().st_size <= THUMBNAIL_MAX_BYTES:
+                break
+        size = destination.stat().st_size
+        if size > THUMBNAIL_MAX_BYTES:
+            print(f"Warning: thumbnail {size} bytes exceeds {THUMBNAIL_MAX_BYTES}; YouTube may reject it.")
+        else:
+            print(f"Thumbnail: 1280x720 JPG q-fit, {size // 1024}KB")
+        return destination
+    except Exception as e:
+        print(f"Warning: thumbnail creation failed: {e}")
+        return None
 
 def _guess_upload_mimetype(video_path, drive_mime=None):
     if drive_mime and drive_mime.startswith("video/"):
@@ -486,6 +560,26 @@ def main():
             print(f"Processing: {name}")
             video_path = tmpdir / ("original_" + Path(name).name)
             sha = download_original(drive, fid, video_path)
+            # ZERO-QUALITY-LOSS GUARANTEE: the upload path is this exact byte-for-byte
+            # file. ffmpeg/ffprobe only READ it (frames for AI + thumbnail). No
+            # transcode/resize/crop/re-encode is ever applied to the upload.
+            probe = probe_video(video_path)
+            dur = probe.get("duration")
+            if dur is not None:
+                is_short = dur <= SHORTS_MAX_SECONDS
+                print(f"Media: {probe.get('width')}x{probe.get('height')} {probe.get('codec')}, "
+                      f"{dur:.1f}s, {probe['size_bytes'] // (1024*1024)}MB, sha256={sha[:12]}… "
+                      f"(original bytes, 0% change on our side)")
+                if not is_short:
+                    msg = (f"{name} is {dur:.0f}s > {SHORTS_MAX_SECONDS:.0f}s: YouTube will treat it "
+                           "as a regular video, not a Short.")
+                    if STRICT_SHORTS_ONLY:
+                        print(f"Skipping (STRICT_SHORTS_ONLY=1): {msg}")
+                        continue
+                    print(f"Warning: {msg} Uploading original anyway.")
+            else:
+                print(f"Media: {probe['size_bytes'] // (1024*1024)}MB, sha256={sha[:12]}… "
+                      "(duration unknown; uploading original anyway)")
             # If different Drive IDs contain the same exact bytes, skip the duplicate.
             duplicate_hash = next((k for k,v in state["processed"].items() if v.get("sha256") == sha), None)
             if duplicate_hash:
@@ -497,7 +591,7 @@ def main():
             frame_dir = tmpdir / ("frames_" + fid[:12])
             frames = extract_frames(video_path, frame_dir)
             try:
-                meta = metadata_for_video(name, frames)
+                meta = metadata_for_video(name, frames, probe)
             except Exception as e:
                 # Do not upload without metadata generation; next scheduled run can retry.
                 print(f"AI metadata generation failed for {name}: {e}")

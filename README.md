@@ -1,6 +1,23 @@
 # Drive to YouTube Shorts Automation
 
-A GitHub Actions workflow that checks one Google Drive folder every four hours, analyses sampled frames with Gemini, generates metadata and a vertical thumbnail, and uploads up to five videos per UTC day.
+A cloud GitHub Actions workflow (works from any device — no local setup) that checks one Google Drive folder every four hours, analyses sampled frames with Gemini, generates viral-style metadata + a spec-compliant thumbnail, and uploads up to 5 videos per run / 5 per UTC day as Shorts.
+
+## Quality: zero change on our side, re-encode on YouTube's side
+
+- The automation downloads the exact Drive bytes and uploads those exact bytes via YouTube resumable upload. No transcode, resize, crop, or re-encode is ever applied to the upload. SHA-256 is verified before/after and logged.
+- That means **0% quality change by us**. However, YouTube always re-processes uploads on its servers, so pixel-identical playback on YouTube cannot be guaranteed by anyone.
+- Frame extraction with ffmpeg is read-only and only used for AI analysis + thumbnail creation.
+
+## Shorts rules enforced
+
+- Shorts qualify at ≤180s (3 min). The run logs duration/resolution/codec per file. Longer files still upload as regular videos unless you set repo variable `STRICT_SHORTS_ONLY=1` to skip them.
+- Vertical/square source is best for the Shorts feed. The original is never cropped — only the thumbnail is composed.
+
+## What gets added for discovery (no virality guarantee)
+
+- AI title (hook-first, ≤70 chars), description (hook + value + CTA + hashtags), 12 search tags, 3-5 hashtags ending with #Shorts, category, and 2-4 word thumbnail text.
+- Custom thumbnail: YouTube-spec 1280x720 JPG under 2MB (blurred background + centered vertical + contrast text). Attempted after upload; YouTube may still show an auto frame inside the Shorts feed — the custom thumb appears on channel/search. The result is logged.
+- Nobody can guarantee "viral". Good metadata + retention + niche consistency help; the workflow gives you the technical best-practice baseline.
 
 ## Important limitations
 

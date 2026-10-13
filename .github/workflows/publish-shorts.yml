@@ -48,6 +48,8 @@ jobs:
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
           MAX_UPLOADS_PER_DAY: ${{ vars.MAX_UPLOADS_PER_DAY }}
           MAX_UPLOADS_PER_RUN: ${{ vars.MAX_UPLOADS_PER_RUN }}
+          SHORTS_MAX_SECONDS: ${{ vars.SHORTS_MAX_SECONDS }}
+          STRICT_SHORTS_ONLY: ${{ vars.STRICT_SHORTS_ONLY }}
           PYTHONUNBUFFERED: "1"
         run: python main.py
 
