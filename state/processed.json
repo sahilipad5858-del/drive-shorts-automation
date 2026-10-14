@@ -49,9 +49,19 @@
       "thumbnail_status": "set",
       "uploaded_at_utc": "2026-10-14T20:14:04.232431+00:00",
       "title": "This Red R34 GT-R Looks Unreal"
+    },
+    "1Tei2GD88z6DrPZ3XyTBU33KcYKoyrXKT": {
+      "name": "ERideBuy.Com (217).mp4",
+      "sha256": "a4be24cc43cdf0613d177d310282ea12443927a3dd07107bec68f745f3814fa0",
+      "status": "uploaded",
+      "youtube_video_id": "FdAdhnjlYAE",
+      "youtube_url": "https://www.youtube.com/shorts/FdAdhnjlYAE",
+      "thumbnail_status": "set",
+      "uploaded_at_utc": "2026-10-14T23:15:14.748372+00:00",
+      "title": "My GTR looks a little different... 😂"
     }
   },
   "daily_uploads": {
-    "2026-10-14": 4
+    "2026-10-14": 5
   }
 }
