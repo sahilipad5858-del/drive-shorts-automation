@@ -1,4 +1,37 @@
 {
-  "processed": {},
-  "daily_uploads": {}
+  "processed": {
+    "1-Eymsy7Ixto40TcLJewu33FprH5kRwMb": {
+      "name": "ERideBuy.Com (214).mp4",
+      "sha256": "5cb3a5db604dc272690e1d1eef7ba165c2357b2630874dabb3bbe4340501ed13",
+      "status": "uploaded",
+      "youtube_video_id": "0X8cZk-6n_o",
+      "youtube_url": "https://www.youtube.com/shorts/0X8cZk-6n_o",
+      "thumbnail_status": "set",
+      "uploaded_at_utc": "2026-10-13T21:16:53.425092+00:00",
+      "title": "When the angel eyes wake up in the dark"
+    },
+    "11BK_u402h83TqeFqjuc2z8yAyzhq_sgh": {
+      "name": "ERideBuy.Com (205).mp4",
+      "sha256": "00f40daa9758d46f21a18cbe428bbb73e24879c211e079e2a9d5ab7354b16e59",
+      "status": "uploaded",
+      "youtube_video_id": "z1tXbTEZ02U",
+      "youtube_url": "https://www.youtube.com/shorts/z1tXbTEZ02U",
+      "thumbnail_status": "set",
+      "uploaded_at_utc": "2026-10-14T04:55:31.429358+00:00",
+      "title": "This Widebody GT-R Stance Looks Unreal 🔥"
+    },
+    "1bsu5Cr1N7PldG-msW-ZmnfyXqQI5Bl00": {
+      "name": "ERideBuy.Com (216).mp4",
+      "sha256": "bfe8db08b5acd1c43db3c2946ebce3e850c782741cec11d366cf1e3a77f06ea0",
+      "status": "uploaded",
+      "youtube_video_id": "d_LlFCKYsqo",
+      "youtube_url": "https://www.youtube.com/shorts/d_LlFCKYsqo",
+      "thumbnail_status": "set",
+      "uploaded_at_utc": "2026-10-14T04:57:55.518720+00:00",
+      "title": "This custom Lamborghini Huracán build looks unreal"
+    }
+  },
+  "daily_uploads": {
+    "2026-10-14": 2
+  }
 }
