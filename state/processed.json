@@ -29,9 +29,29 @@
       "thumbnail_status": "set",
       "uploaded_at_utc": "2026-10-14T04:57:55.518720+00:00",
       "title": "This custom Lamborghini Huracán build looks unreal"
+    },
+    "1BTLs7Z7SXOrc1IRtXQ2f0JJd8HnFAMyS": {
+      "name": "ERideBuy.Com (15).mp4",
+      "sha256": "8bbf8d187a703a1bdaf8f19b38eaead7fe00a9347a1218130f9676f3463d9a99",
+      "status": "uploaded",
+      "youtube_video_id": "F2m_I6SnzQk",
+      "youtube_url": "https://www.youtube.com/shorts/F2m_I6SnzQk",
+      "thumbnail_status": "set",
+      "uploaded_at_utc": "2026-10-14T20:13:30.224715+00:00",
+      "title": "This Red Supra Aesthetic Is Unreal"
+    },
+    "1CVy0hCUGnxesCERFJB5Z3rudNz8jWmCy": {
+      "name": "ERideBuy.Com (11).mp4",
+      "sha256": "db1685e91228853229977cc1dac2dec6251c8bb069bae53f089883885473c738",
+      "status": "uploaded",
+      "youtube_video_id": "km8RudgokJk",
+      "youtube_url": "https://www.youtube.com/shorts/km8RudgokJk",
+      "thumbnail_status": "set",
+      "uploaded_at_utc": "2026-10-14T20:14:04.232431+00:00",
+      "title": "This Red R34 GT-R Looks Unreal"
     }
   },
   "daily_uploads": {
-    "2026-10-14": 2
+    "2026-10-14": 4
   }
 }
