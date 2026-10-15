@@ -69,9 +69,49 @@
       "thumbnail_status": "set",
       "uploaded_at_utc": "2026-10-15T04:39:56.729163+00:00",
       "title": "Midnight Underground Garage Roll Out"
+    },
+    "1Uhl8yqUY3lCDSMHH57rCFtsjc88psF5p": {
+      "name": "ERideBuy.Com (102).mp4",
+      "sha256": "03e00af33d4dfb3c5cbd809b3e00e58b58d054b70f31aa2670f865ec110d056c",
+      "status": "uploaded",
+      "youtube_video_id": "l_MikNhYtQ8",
+      "youtube_url": "https://www.youtube.com/shorts/l_MikNhYtQ8",
+      "thumbnail_status": "set",
+      "uploaded_at_utc": "2026-10-15T13:28:16.375999+00:00",
+      "title": "Heart vs Brain: Drift Always Wins"
+    },
+    "1bPjfypjYpcPrjWTxuM-JC-Fi2u0cREdf": {
+      "name": "ERideBuy.Com (222).mp4",
+      "sha256": "e6968052257511859fd77924abe7f185eb1484fa8c690f94d1539b0e723c0ba4",
+      "status": "uploaded",
+      "youtube_video_id": "w7KZeDElEYs",
+      "youtube_url": "https://www.youtube.com/shorts/w7KZeDElEYs",
+      "thumbnail_status": "set",
+      "uploaded_at_utc": "2026-10-15T13:28:31.977082+00:00",
+      "title": "The Cleanest Nissan Skyline R34 GT-R Build"
+    },
+    "1dieS2HRxos8VWOULJ_MvJMTSjcXcgGgv": {
+      "name": "ERideBuy.Com (131).mp4",
+      "sha256": "b20cd889551fdcc45b71e1e6826016dc4a9b4eb2f59bb4a8f3bb3767b84cb9dd",
+      "status": "uploaded",
+      "youtube_video_id": "sYFNt_Dw-6U",
+      "youtube_url": "https://www.youtube.com/shorts/sYFNt_Dw-6U",
+      "thumbnail_status": "set",
+      "uploaded_at_utc": "2026-10-15T13:28:48.047748+00:00",
+      "title": "Wait, that's not a Supra or an RX-7... 😂"
+    },
+    "1I09pf0s4BUdfC_C4jKQ6uQuox3PW-r5C": {
+      "name": "ERideBuy.Com (207).mp4",
+      "sha256": "3305744ca6ed41d8723f99b8618fea9d6289a1a0029d9b5b8c36d2ba52a64159",
+      "status": "uploaded",
+      "youtube_video_id": "HqrIbULJX0c",
+      "youtube_url": "https://www.youtube.com/shorts/HqrIbULJX0c",
+      "thumbnail_status": "set",
+      "uploaded_at_utc": "2026-10-15T13:29:04.569195+00:00",
+      "title": "This Slammed Mercedes 190E Evo Is Unreal"
     }
   },
   "daily_uploads": {
-    "2026-10-15": 1
+    "2026-10-15": 5
   }
 }
