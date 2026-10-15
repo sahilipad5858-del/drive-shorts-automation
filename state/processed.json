@@ -59,9 +59,19 @@
       "thumbnail_status": "set",
       "uploaded_at_utc": "2026-10-14T23:15:14.748372+00:00",
       "title": "My GTR looks a little different... 😂"
+    },
+    "1XxBQjH5gf7CTggLnf9vjMt7MOkapmrIM": {
+      "name": "ERideBuy.Com (172).mp4",
+      "sha256": "0ce048ff924813c9a4ec95e2eb8bf686b0f8ffefaf926566337212edcca159e6",
+      "status": "uploaded",
+      "youtube_video_id": "kUzgdoYOzkA",
+      "youtube_url": "https://www.youtube.com/shorts/kUzgdoYOzkA",
+      "thumbnail_status": "set",
+      "uploaded_at_utc": "2026-10-15T04:39:56.729163+00:00",
+      "title": "Midnight Underground Garage Roll Out"
     }
   },
   "daily_uploads": {
-    "2026-10-14": 5
+    "2026-10-15": 1
   }
 }
