@@ -109,9 +109,19 @@
       "thumbnail_status": "set",
       "uploaded_at_utc": "2026-10-15T13:29:04.569195+00:00",
       "title": "This Slammed Mercedes 190E Evo Is Unreal"
+    },
+    "1mDTEvA5Dzyv_VN1t517nf7-5ebHDzCZC": {
+      "name": "ERideBuy.Com (17).mp4",
+      "sha256": "a0c7649a4a94d5ef3b5dd912dc4bdc8fd150284c56bb251503aada7eb94c1e05",
+      "status": "uploaded",
+      "youtube_video_id": "7XaqirZU3Xw",
+      "youtube_url": "https://www.youtube.com/shorts/7XaqirZU3Xw",
+      "thumbnail_status": "set",
+      "uploaded_at_utc": "2026-10-16T04:34:03.818724+00:00",
+      "title": "Spotting Hot Air Balloons Over the Open Highway"
     }
   },
   "daily_uploads": {
-    "2026-10-15": 5
+    "2026-10-16": 1
   }
 }
