@@ -149,7 +149,59 @@
       "thumbnail_status": "set",
       "uploaded_at_utc": "2026-10-16T22:53:12.798811+00:00",
       "title": "When You Finish a 2 Hour Drive in 120 Minutes 💀"
+    },
+    "1LbMwudU3KKF1rsyW4CqBlNAn_15_RX8a": {
+      "name": "ERideBuy.Com (1).mp4",
+      "sha256": "b55872d0e589e81b1b40f5233fe44247494a4c4d68d8c33b33054ee627049f1d",
+      "status": "uploaded",
+      "youtube_video_id": "i_5X9dOvkhk",
+      "youtube_url": "https://www.youtube.com/shorts/i_5X9dOvkhk",
+      "thumbnail_status": "set",
+      "uploaded_at_utc": "2026-10-17T12:12:02.417216+00:00",
+      "title": "This Nissan GT-R Nismo Look Is Unmatched"
+    },
+    "1s7VFWphI5k32o_ifnmBqmEDtvuyZVLmV": {
+      "name": "ERideBuy.Com (227).mp4",
+      "sha256": "209acd321e31f49054a464c92372bb6e7091eda898b9d2b0c08bbf9ba4a064c5",
+      "status": "uploaded",
+      "youtube_video_id": "os3YSGMtfX0",
+      "youtube_url": "https://www.youtube.com/shorts/os3YSGMtfX0",
+      "thumbnail_status": "set",
+      "uploaded_at_utc": "2026-10-17T12:12:24.146107+00:00",
+      "title": "Cleanest slammed McLaren P1 build in GTA 5"
+    },
+    "1t2tEkLG2AkTP8pFzBsErbNB-eil_fSMa": {
+      "name": "ERideBuy.Com (348).mp4",
+      "sha256": "3bfd2a441ccdbeb54b89f67bb20a70a95f53958ad13be22425fda37bdc3ff12c",
+      "status": "uploaded",
+      "youtube_video_id": "VPeoce2z3Ws",
+      "youtube_url": "https://www.youtube.com/shorts/VPeoce2z3Ws",
+      "thumbnail_status": "set",
+      "uploaded_at_utc": "2026-10-17T12:12:38.596565+00:00",
+      "title": "This Matte Black Widebody Ferrari Looks Insane"
+    },
+    "1YwwqMmVKBWRir_HB7LpaDeMFqNQwQ-9-": {
+      "name": "ERideBuy.Com (252).mp4",
+      "sha256": "87528deae0d79cb63d0c672d198ee514aaa54c4e8e8ef8cf353e942e82a30212",
+      "status": "uploaded",
+      "youtube_video_id": "NUbSSOMGL90",
+      "youtube_url": "https://www.youtube.com/shorts/NUbSSOMGL90",
+      "thumbnail_status": "set",
+      "uploaded_at_utc": "2026-10-17T12:12:54.985834+00:00",
+      "title": "This Widebody BMW M4 Build Looks Insane"
+    },
+    "1FKJ4EBO_hWsH7ETsYZB51dS-Rj-BJ7ib": {
+      "name": "ERideBuy.Com (307).mp4",
+      "sha256": "42e3a20130abaa302d52f5a4d10934d1fcf4667505af69b21d99fdbddf9ce5b6",
+      "status": "uploaded",
+      "youtube_video_id": "dXHEUsCkuK8",
+      "youtube_url": "https://www.youtube.com/shorts/dXHEUsCkuK8",
+      "thumbnail_status": "set",
+      "uploaded_at_utc": "2026-10-17T12:13:13.681823+00:00",
+      "title": "Pure JDM Perfection: Red Honda NSX"
     }
   },
-  "daily_uploads": {}
+  "daily_uploads": {
+    "2026-10-17": 5
+  }
 }
